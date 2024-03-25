@@ -38,6 +38,35 @@ def shuffler(shuffle):
 
     return(shuffle)
 
+def download_file_from_google_drive(file_id, destination):
+    URL = "https://docs.google.com/uc?export=download&confirm=1"
+
+    session = requests.Session()
+
+    response = session.get(URL, params={"id": file_id}, stream=True)
+    token = get_confirm_token(response)
+
+    if token:
+        params = {"id": file_id, "confirm": token}
+        response = session.get(URL, params=params, stream=True)
+
+    save_response_content(response, destination)
+
+def get_confirm_token(response):
+    for key, value in response.cookies.items():
+        if key.startswith("download_warning"):
+            return value
+
+    return None
+
+def save_response_content(response, destination):
+    CHUNK_SIZE = 32768
+
+    with open(destination, "wb") as f:
+        for chunk in response.iter_content(CHUNK_SIZE):
+            if chunk:  # filter out keep-alive new chunks
+                f.write(chunk)
+
 def main():
     parser = ArgumentParser(
         description="Daily Data Savvy metric calculation pipeline"
@@ -51,6 +80,7 @@ def main():
     settings = parser.parse_args()
 
     # Date
+
     if settings.num_songs is None:
         num_songs = 250
     else:
@@ -60,7 +90,12 @@ def main():
         
     print("Loading library...")
 
-    library = pd.read_json("/users/august.warren/Downloads/Spotify Account Data/StreamingHistory_music_0.json")
+    file_id = os.environ["FILE_ID"]
+    destination = "./StreamingHistory_music_0.json"
+
+    download_file_from_google_drive(file_id, destination)
+
+    library = pd.read_json("StreamingHistory_music_0.json")
 
     print("Shuffling...")
 
