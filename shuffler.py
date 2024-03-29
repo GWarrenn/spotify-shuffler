@@ -5,6 +5,7 @@ import json
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import spotipy.util as util
+from spotipy import oauth2
 from spotipy.oauth2 import SpotifyClientCredentials
 import os
 from datetime import datetime
@@ -67,71 +68,9 @@ def save_response_content(response, destination):
             if chunk:  # filter out keep-alive new chunks
                 f.write(chunk)
 
-def main():
-    parser = ArgumentParser(
-        description="Daily Data Savvy metric calculation pipeline"
-    )
-    parser.add_argument(
-        "--num_songs",
-        "-n",
-        help="Specify playlist length -- default is 250",
-    )
-
-    settings = parser.parse_args()
-
-    # Date
-
-    if settings.num_songs is None:
-        num_songs = 250
-    else:
-        num_songs = int(settings.num_songs)
-
-    ## load library data
-        
-    print("Loading library...")
-
-    file_id = os.environ["FILE_ID"]
-    destination = "./StreamingHistory_music_0.json"
-
-    download_file_from_google_drive(file_id, destination)
-
-    library = pd.read_json("StreamingHistory_music_0.json")
-
-    print("Shuffling...")
-
-    shuffle = library.sample(replace=False, 
-                                n=num_songs, 
-                                random_state=None)
-
-    ## initial sampling to get num_songs length songs
-
-    shuffle = shuffler(shuffle)
-
-    while len(shuffle) < num_songs:
-        
-        extra_shuffle = library.sample(replace=False, n=num_songs - len(shuffle), random_state=None)
-
-        shuffle = pd.concat([shuffle,extra_shuffle]).reset_index().drop(['index'],axis=1)
-
-        shuffle = shuffler(shuffle)
-
-    print("Creating Playlist: Shuffler {}...".format(datetime.now().strftime('%Y-%m-%d')))
-
-    scope = "playlist-modify-public"
-    username = 'kicsikicsi'
-
-    # os.environ["SPOTIPY_CLIENT_ID"] = '' # client id
-    # os.environ["SPOTIPY_CLIENT_SECRET"] = '' # Secret ID
-    # os.environ["SPOTIPY_REDIRECT_URI"] = '' # Redirect URI
-
-    token = util.prompt_for_user_token(username, scope)
-    sp = spotipy.Spotify(auth=token)
-
-    new_playlist = sp.user_playlist_create(username, 'Shuffler {}'.format(datetime.now().strftime('%Y-%m-%d')), public=True, collaborative=False, description='')
+def get_spotify_ids(shuffle):
 
     track_dict = {}
-
-    print('Getting Spotify song identifiers...')
 
     for tracks in shuffle.iterrows():
 
@@ -168,6 +107,108 @@ def main():
             track_dict['{}_{}'.format(artist,song_name)] = single_track_id
         elif (has_album_version == 0) & (has_single == 0):
             track_dict['{}_{}'.format(artist,song_name)] = compilation_track_id
+
+    return(track_dict)
+
+def main():
+    parser = ArgumentParser(
+        description="Daily Data Savvy metric calculation pipeline"
+    )
+    parser.add_argument(
+        "--num_songs",
+        "-n",
+        help="Specify playlist length -- default is 250",
+    )
+
+    extended_history = True
+
+    settings = parser.parse_args()
+
+    # Date
+
+    if settings.num_songs is None:
+        num_songs = 250
+    else:
+        num_songs = int(settings.num_songs)
+
+    ## load library data
+        
+    print("Loading library...")
+
+    if not extended_history:
+        file_id = os.environ["FILE_ID"]
+        destination = "./StreamingHistory_music_0.json"
+
+        download_file_from_google_drive(file_id, destination)
+
+        library = pd.read_json("StreamingHistory_music_0.json")
+
+    else:
+        library = pd.DataFrame()
+
+        if type(os.environ["FILE_ID_LIST"]) is list:
+            file_list = os.environ["FILE_ID_LIST"]
+        else:
+            file_list = json.loads(os.environ["FILE_ID_LIST"])
+
+        for file in file_list:
+
+            file_id = file
+            destination = "./StreamingHistory_music_0.json"
+
+            download_file_from_google_drive(file_id, destination)
+            library = pd.read_json("StreamingHistory_music_0.json")
+
+            os.remove(destination)
+
+            temp_df = temp_df[['master_metadata_track_name','master_metadata_album_artist_name','spotify_track_uri']]
+            temp_df['spotify_track_uri'] = temp_df['spotify_track_uri'].str.replace('spotify:track:','')
+            temp_df['ArtistName'] = temp_df['master_metadata_album_artist_name']
+
+            library = pd.concat([library,temp_df])
+
+    print("Shuffling...")
+
+    shuffle = library.sample(replace=False, 
+                                n=num_songs, 
+                                random_state=None)
+
+    ## initial sampling to get num_songs length songs
+
+    shuffle = shuffler(shuffle)
+
+    while len(shuffle) < num_songs:
+        
+        extra_shuffle = library.sample(replace=False, n=num_songs - len(shuffle), random_state=None)
+
+        shuffle = pd.concat([shuffle,extra_shuffle]).reset_index().drop(['index'],axis=1)
+
+        shuffle = shuffler(shuffle)
+
+    print("Creating Playlist: Shuffler {}...".format(datetime.now().strftime('%Y-%m-%d')))
+
+    username = 'kicsikicsi'
+
+    # os.environ["SPOTIPY_CLIENT_ID"] = '' # client id
+    # os.environ["SPOTIPY_CLIENT_SECRET"] = '' # Secret ID
+    # os.environ["SPOTIPY_REDIRECT_URI"] = '' # Redirect URI
+
+    scope = 'playlist-modify-public'
+
+    sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
+        client_id=os.environ["SPOTIPY_CLIENT_ID"], 
+        client_secret=os.environ["SPOTIPY_CLIENT_SECRET"], 
+        redirect_uri="http://127.0.0.1:5000/", 
+        scope=scope, 
+        open_browser=False,))
+
+    new_playlist = sp.user_playlist_create(username, 'Shuffler {}'.format(datetime.now().strftime('%Y-%m-%d')), public=True, collaborative=False, description='')
+
+    if not extended_history:
+        print('Getting Spotify song identifiers...')
+        track_dict = get_spotify_ids(shuffle)
+    else:
+        track_dict = shuffle['spotify_track_uri'].to_dict()
 
     print('Uploading songs to playlist')
 
