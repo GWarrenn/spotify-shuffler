@@ -163,7 +163,7 @@ def main():
 
             temp_df = temp_df[['master_metadata_track_name','master_metadata_album_artist_name','spotify_track_uri']]
             temp_df['spotify_track_uri'] = temp_df['spotify_track_uri'].str.replace('spotify:track:','')
-            temp_df['ArtistName'] = temp_df['master_metadata_album_artist_name']
+            temp_df['artistName'] = temp_df['master_metadata_album_artist_name']
 
             library = pd.concat([library,temp_df])
 
