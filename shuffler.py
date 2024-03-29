@@ -157,7 +157,7 @@ def main():
             destination = "./StreamingHistory_music_0.json"
 
             download_file_from_google_drive(file_id, destination)
-            library = pd.read_json("StreamingHistory_music_0.json")
+            temp_df = pd.read_json("StreamingHistory_music_0.json")
 
             os.remove(destination)
 
