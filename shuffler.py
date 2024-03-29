@@ -9,6 +9,7 @@ from spotipy import oauth2
 from spotipy.oauth2 import SpotifyClientCredentials
 import os
 from datetime import datetime
+import time
 
 ## few thoughts:
 #   1. use artists to pull songs that users haven't listened to but may be interested in
@@ -189,17 +190,21 @@ def main():
 
     username = 'kicsikicsi'
 
-    # os.environ["SPOTIPY_CLIENT_ID"] = '' # client id
-    # os.environ["SPOTIPY_CLIENT_SECRET"] = '' # Secret ID
-    # os.environ["SPOTIPY_REDIRECT_URI"] = '' # Redirect URI
-
     scope = 'playlist-modify-public'
 
-    sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
+    sp_auth = SpotifyOAuth(
         client_id=os.environ["SPOTIPY_CLIENT_ID"], 
         client_secret=os.environ["SPOTIPY_CLIENT_SECRET"], 
         redirect_uri="http://localhost:8888/callback", 
-        scope=scope))
+        scope=scope)
+    
+    f = open("/etc/secrets/spotipy_chache")
+    token_info = json.load(f)
+
+    token_info = sp_auth.refresh_access_token(token_info['refresh_token'])
+    token = token_info['access_token']
+
+    sp = spotipy.Spotify(auth=token)
 
     new_playlist = sp.user_playlist_create(username, 'Shuffler {}'.format(datetime.now().strftime('%Y-%m-%d')), public=True, collaborative=False, description='')
 
@@ -219,7 +224,8 @@ def main():
     for track in track_list:
         try:
             print(track)
-            sp.user_playlist_add_tracks(username, new_playlist['id'], tracks = [track], position=None)
+            if track is not None:
+                sp.user_playlist_add_tracks(username, new_playlist['id'], tracks = [track], position=None)
         except Exception as e:
             print("Error uploading track {}".format(track_dict[track]))
 
