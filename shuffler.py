@@ -199,8 +199,7 @@ def main():
         client_id=os.environ["SPOTIPY_CLIENT_ID"], 
         client_secret=os.environ["SPOTIPY_CLIENT_SECRET"], 
         redirect_uri="http://localhost:8888/callback", 
-        scope=scope, 
-        open_browser=False,))
+        scope=scope))
 
     new_playlist = sp.user_playlist_create(username, 'Shuffler {}'.format(datetime.now().strftime('%Y-%m-%d')), public=True, collaborative=False, description='')
 
