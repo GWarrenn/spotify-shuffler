@@ -198,7 +198,7 @@ def main():
     sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
         client_id=os.environ["SPOTIPY_CLIENT_ID"], 
         client_secret=os.environ["SPOTIPY_CLIENT_SECRET"], 
-        redirect_uri="http://127.0.0.1:5000/", 
+        redirect_uri="http://localhost:8888/callback", 
         scope=scope, 
         open_browser=False,))
 
