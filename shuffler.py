@@ -11,16 +11,6 @@ import os
 from datetime import datetime
 import time
 
-## few thoughts:
-#   1. use artists to pull songs that users haven't listened to but may be interested in
-#       - using Spotify API to pull in songs from discography
-
-## remaining work:
-#   - set-up autehntication key/register app for API key
-#       - this will be used for all users/friends, I guess
-#   - figure out how to create playlists
-#       - will have to be public and send link via email
-
 def shuffler(shuffle):
     """
     Main shuffling/random smapling function
@@ -136,98 +126,100 @@ def main():
         
     print("Loading library...")
 
-    if not extended_history:
-        file_id = os.environ["FILE_ID"]
-        destination = "./StreamingHistory_music_0.json"
+    f = open("/etc/secrets/file_id_users")
+    users = json.load(f)
 
-        download_file_from_google_drive(file_id, destination)
+    for user in users:
 
-        library = pd.read_json("StreamingHistory_music_0.json")
-
-    else:
-        library = pd.DataFrame()
-
-        if type(os.environ["FILE_ID_LIST"]) is list:
-            file_list = os.environ["FILE_ID_LIST"]
-        else:
-            file_list = json.loads(os.environ["FILE_ID_LIST"])
-
-        for file in file_list:
-
-            file_id = file
+        if not extended_history:
+            file_id = os.environ["FILE_ID"]
             destination = "./StreamingHistory_music_0.json"
 
             download_file_from_google_drive(file_id, destination)
-            temp_df = pd.read_json("StreamingHistory_music_0.json")
 
-            os.remove(destination)
+            library = pd.read_json("StreamingHistory_music_0.json")
 
-            temp_df = temp_df[['master_metadata_track_name','master_metadata_album_artist_name','spotify_track_uri']]
-            temp_df['spotify_track_uri'] = temp_df['spotify_track_uri'].str.replace('spotify:track:','')
-            temp_df['artistName'] = temp_df['master_metadata_album_artist_name']
+        else:
+            library = pd.DataFrame()
 
-            library = pd.concat([library,temp_df])
+            file_list = users[user]
 
-    print("Shuffling...")
+            for file in file_list:
 
-    shuffle = library.sample(replace=False, 
-                                n=num_songs, 
-                                random_state=None)
+                file_id = file
+                destination = "./StreamingHistory_music_0.json"
 
-    ## initial sampling to get num_songs length songs
+                download_file_from_google_drive(file_id, destination)
+                temp_df = pd.read_json("StreamingHistory_music_0.json")
 
-    shuffle = shuffler(shuffle)
+                os.remove(destination)
 
-    while len(shuffle) < num_songs:
-        
-        extra_shuffle = library.sample(replace=False, n=num_songs - len(shuffle), random_state=None)
+                temp_df = temp_df[['master_metadata_track_name','master_metadata_album_artist_name','spotify_track_uri']]
+                temp_df['spotify_track_uri'] = temp_df['spotify_track_uri'].str.replace('spotify:track:','')
+                temp_df['artistName'] = temp_df['master_metadata_album_artist_name']
 
-        shuffle = pd.concat([shuffle,extra_shuffle]).reset_index().drop(['index'],axis=1)
+                library = pd.concat([library,temp_df])
+
+        print("Shuffling...")
+
+        shuffle = library.sample(replace=False, 
+                                    n=num_songs, 
+                                    random_state=None)
+
+        ## initial sampling to get num_songs length songs
 
         shuffle = shuffler(shuffle)
 
-    print("Creating Playlist: Shuffler {}...".format(datetime.now().strftime('%Y-%m-%d')))
+        while len(shuffle) < num_songs:
+            
+            extra_shuffle = library.sample(replace=False, n=num_songs - len(shuffle), random_state=None)
 
-    username = 'kicsikicsi'
+            shuffle = pd.concat([shuffle,extra_shuffle]).reset_index().drop(['index'],axis=1)
 
-    scope = 'playlist-modify-public'
+            shuffle = shuffler(shuffle)
 
-    sp_auth = SpotifyOAuth(
-        client_id=os.environ["SPOTIPY_CLIENT_ID"], 
-        client_secret=os.environ["SPOTIPY_CLIENT_SECRET"], 
-        redirect_uri="http://localhost:8888/callback", 
-        scope=scope)
-    
-    f = open("/etc/secrets/spotipy_chache")
-    token_info = json.load(f)
+        print("Creating Playlist: Shuffler {}...".format(datetime.now().strftime('%Y-%m-%d')))
 
-    token_info = sp_auth.refresh_access_token(token_info['refresh_token'])
-    token = token_info['access_token']
+        username = 'kicsikicsi'
 
-    sp = spotipy.Spotify(auth=token)
+        scope = 'playlist-modify-public'
 
-    new_playlist = sp.user_playlist_create(username, 'Shuffler {}'.format(datetime.now().strftime('%Y-%m-%d')), public=True, collaborative=False, description='')
+        sp_auth = SpotifyOAuth(
+            client_id=os.environ["SPOTIPY_CLIENT_ID"], 
+            client_secret=os.environ["SPOTIPY_CLIENT_SECRET"], 
+            redirect_uri="http://localhost:8888/callback", 
+            scope=scope)
+        
+        f = open("/etc/secrets/spotipy_chache")
+        token_info = json.load(f)
 
-    if not extended_history:
-        print('Getting Spotify song identifiers...')
-        track_dict = get_spotify_ids(shuffle)
-    else:
-        track_dict = shuffle['spotify_track_uri'].to_dict()
+        token_info = sp_auth.refresh_access_token(token_info['refresh_token'])
+        token = token_info['access_token']
 
-    print('Uploading songs to playlist')
+        sp = spotipy.Spotify(auth=token)
 
-    track_list = []
+        new_playlist = sp.user_playlist_create(username, '{} Daily Shuffler {}'.format(user,datetime.now().strftime('%Y-%m-%d')), public=True, collaborative=False, description='')
 
-    for item in track_dict:
-        track_list.append(track_dict[item])
+        if not extended_history:
+            print('Getting Spotify song identifiers...')
+            track_dict = get_spotify_ids(shuffle)
+        else:
+            track_dict = shuffle['spotify_track_uri'].to_dict()
 
-    for track in track_list:
-        try:
-            print(track)
-            if track is not None:
-                sp.user_playlist_add_tracks(username, new_playlist['id'], tracks = [track], position=None)
-        except Exception as e:
-            print("Error uploading track {}".format(track_dict[track]))
+        print('Uploading songs to playlist')
+
+        track_list = []
+
+        for item in track_dict:
+            track_list.append(track_dict[item])
+
+        for track in track_list:
+            try:
+                print(track)
+                if track is not None:
+                    sp.user_playlist_add_tracks(username, new_playlist['id'], tracks = [track], position=None)
+            except Exception as e:
+                print("Error uploading track {}".format(track_dict[track]))
 
 if __name__ == '__main__':
     main()
